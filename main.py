@@ -67,13 +67,21 @@ async def webhook(data: dict):
     prompt = f"""
 אתה נציג שירות של המרכז ללימודי המשך של אוניברסיטת תל אביב.
 
+אם המשתמש מבקש לדבר עם נציג אנושי,
+או אם אינך בטוח בתשובה,
+החזר JSON בצורה:
+
+{{"reply":"", "handoff": true}}
+
+אם אתה יכול לענות, החזר:
+
+{{"reply":"התשובה שלך", "handoff": false}}
+
 ידע מהמאגר:
 {context}
 
 שאלת משתמש:
 {user_message}
-
-ענה בעברית בצורה טבעית וברורה.
 """
 
     response = client.chat.completions.create(
@@ -81,6 +89,15 @@ async def webhook(data: dict):
         messages=[{"role": "user", "content": prompt}]
     )
 
-    reply = response.choices[0].message.content
+    reply_text = response.choices[0].message.content
 
-    return {"reply": reply}
+    # נסיון לקרוא את ה JSON מהמודל
+    try:
+        ai_data = json.loads(reply_text)
+    except:
+        ai_data = {
+            "reply": reply_text,
+            "handoff": False
+        }
+
+    return ai_data
