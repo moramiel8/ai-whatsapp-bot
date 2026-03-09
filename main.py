@@ -31,12 +31,21 @@ def search(question):
     scores = cosine_similarity([q_embedding], vectors)[0]
     best = scores.argmax()
 
+    if scores[best] < 0.6:
+        return {
+            "question": "",
+            "answer": "אשמח לבדוק עבורך. אפשר לפרט קצת יותר?"
+        }
+
     return knowledge[best]
 
 
 @app.post("/webhook")
 async def webhook(data: dict):
-    user_message = data.get("text", "")
+
+    print(data)
+
+    user_message = data.get("text") or data.get("message") or ""
 
     result = search(user_message)
 
