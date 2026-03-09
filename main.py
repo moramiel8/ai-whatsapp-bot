@@ -9,11 +9,13 @@ from openai import OpenAI
 app = FastAPI()
 client = OpenAI()
 
+# load knowledge
 with open("knowledge.json", "r", encoding="utf-8") as f:
     knowledge = json.load(f)
 
 questions = [k["question"] for k in knowledge]
 
+# create embeddings for all questions
 embeddings = client.embeddings.create(
     model="text-embedding-3-small",
     input=questions
@@ -23,21 +25,27 @@ vectors = [e.embedding for e in embeddings]
 
 
 def search(question):
+
     q_embedding = client.embeddings.create(
         model="text-embedding-3-small",
         input=question
     ).data[0].embedding
 
     scores = cosine_similarity([q_embedding], vectors)[0]
-    best = scores.argmax()
 
-    if scores[best] < 0.6:
-        return {
+    # top 3 results
+    top_indices = scores.argsort()[-3:][::-1]
+
+    results = [knowledge[i] for i in top_indices]
+
+    # אם אין התאמה טובה
+    if scores[top_indices[0]] < 0.6:
+        return [{
             "question": "",
-            "answer": "אשמח לבדוק עבורך. אפשר לפרט קצת יותר?"
-        }
+            "answer": "אשמח לעזור 🙂 אפשר לפרט קצת יותר על השאלה?"
+        }]
 
-    return knowledge[best]
+    return results
 
 
 @app.post("/webhook")
@@ -47,19 +55,25 @@ async def webhook(data: dict):
 
     user_message = data.get("text") or data.get("message") or ""
 
-    result = search(user_message)
+    results = search(user_message)
+
+    context = ""
+    for r in results:
+        context += f"""
+שאלה: {r['question']}
+תשובה: {r['answer']}
+"""
 
     prompt = f"""
 אתה נציג שירות של המרכז ללימודי המשך של אוניברסיטת תל אביב.
 
-ידע:
-שאלה: {result['question']}
-תשובה: {result['answer']}
+ידע מהמאגר:
+{context}
 
 שאלת משתמש:
 {user_message}
 
-ענה בעברית בצורה טבעית.
+ענה בעברית בצורה טבעית וברורה.
 """
 
     response = client.chat.completions.create(
