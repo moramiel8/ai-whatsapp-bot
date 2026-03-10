@@ -77,6 +77,8 @@ async def webhook(data: dict):
 
 {{"reply":"התשובה שלך", "handoff": false}}
 
+ענה אך ורק בפורמט JSON.
+
 ידע מהמאגר:
 {context}
 
@@ -89,18 +91,24 @@ async def webhook(data: dict):
         messages=[{"role": "user", "content": prompt}]
     )
 
-reply_text = response.choices[0].message.content
+    reply_text = response.choices[0].message.content
 
-try:
-    ai_data = json.loads(reply_text)
+    try:
+        ai_data = json.loads(reply_text)
 
-    if "reply" not in ai_data:
-        ai_data["reply"] = reply_text
+        if "reply" not in ai_data:
+            ai_data["reply"] = reply_text
 
-    if "handoff" not in ai_data:
-        ai_data["handoff"] = False
+        if "handoff" not in ai_data:
+            ai_data["handoff"] = False
 
-except:
+    except:
+        ai_data = {
+            "reply": reply_text,
+            "handoff": False
+        }
+
+    return ai_data
     ai_data = {
         "reply": reply_text,
         "handoff": False
