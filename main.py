@@ -89,15 +89,21 @@ async def webhook(data: dict):
         messages=[{"role": "user", "content": prompt}]
     )
 
-    reply_text = response.choices[0].message.content
+reply_text = response.choices[0].message.content
 
-    # נסיון לקרוא את ה JSON מהמודל
-    try:
-        ai_data = json.loads(reply_text)
-    except:
-        ai_data = {
-            "reply": reply_text,
-            "handoff": False
-        }
+try:
+    ai_data = json.loads(reply_text)
 
-    return ai_data
+    if "reply" not in ai_data:
+        ai_data["reply"] = reply_text
+
+    if "handoff" not in ai_data:
+        ai_data["handoff"] = False
+
+except:
+    ai_data = {
+        "reply": reply_text,
+        "handoff": False
+    }
+
+return ai_data
