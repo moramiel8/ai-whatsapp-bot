@@ -1,4 +1,6 @@
+import os
 import sys
+from datetime import datetime
 sys.stdout.reconfigure(encoding='utf-8')
 
 import json
@@ -42,10 +44,11 @@ def search(question):
 
     top_indices = scores.argsort()[-5:][::-1]
 
+    best_score = scores[top_indices[0]]
+
     results = [docs[i] for i in top_indices]
 
-    return results
-
+    return results, best_score
 
 # -----------------------------
 # search FAQ first
@@ -62,9 +65,60 @@ def search_faq(question):
 
     return None
 
-
 # -----------------------------
 # Test endpoint
+# -----------------------------
+
+# -----------------------------
+# log questions
+# -----------------------------
+
+def log_question(question):
+
+    log_file = "questions_log.json"
+
+    entry = {
+        "question": question,
+        "time": datetime.now().isoformat()
+    }
+
+    if os.path.exists(log_file):
+
+        with open(log_file,"r",encoding="utf-8") as f:
+            data = json.load(f)
+
+    else:
+        data = []
+
+    data.append(entry)
+
+    with open(log_file,"w",encoding="utf-8") as f:
+        json.dump(data,f,ensure_ascii=False,indent=2)
+
+def log_unknown_question(question):
+
+    file = "unknown_questions.json"
+
+    entry = {
+        "question": question,
+        "time": datetime.now().isoformat()
+    }
+
+    if os.path.exists(file):
+
+        with open(file,"r",encoding="utf-8") as f:
+            data = json.load(f)
+
+    else:
+        data = []
+
+    data.append(entry)
+
+    with open(file,"w",encoding="utf-8") as f:
+        json.dump(data,f,ensure_ascii=False,indent=2)
+
+# -----------------------------
+# Webhook
 # -----------------------------
 
 @app.get("/webhook")
@@ -92,6 +146,8 @@ async def webhook(data: dict):
 
     print("User message:", user_message)
 
+    log_question(user_message)
+
     # -----------------------------
     # handle empty messages
     # -----------------------------
@@ -112,7 +168,7 @@ async def webhook(data: dict):
     # search website knowledge
     # -----------------------------
 
-    results = search(user_message)
+    results, score = search(user_message)
 
     context = ""
 
@@ -125,7 +181,7 @@ async def webhook(data: dict):
 
     context = context[:3000]
 
- system_prompt = """
+    system_prompt = """
 אתה עוזר מידע רשמי של המרכז ללימודי המשך של הפקולטה לרפואה באוניברסיטת תל אביב.
 
 מטרתך לספק מידע ללומדים ומתעניינים בתוכניות הלימוד של המרכז.
