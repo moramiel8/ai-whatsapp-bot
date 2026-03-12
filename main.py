@@ -9,7 +9,10 @@ from openai import OpenAI
 app = FastAPI()
 client = OpenAI()
 
+# -----------------------------
 # load knowledge
+# -----------------------------
+
 with open("knowledge.json", "r", encoding="utf-8") as f:
     knowledge = json.load(f)
 
@@ -24,6 +27,10 @@ embeddings = client.embeddings.create(
 vectors = [e.embedding for e in embeddings]
 
 
+# -----------------------------
+# semantic search
+# -----------------------------
+
 def search(question):
 
     q_embedding = client.embeddings.create(
@@ -33,7 +40,6 @@ def search(question):
 
     scores = cosine_similarity([q_embedding], vectors)[0]
 
-    # top 3 results
     top_indices = scores.argsort()[-3:][::-1]
 
     results = [knowledge[i] for i in top_indices]
@@ -48,16 +54,38 @@ def search(question):
     return results
 
 
+# -----------------------------
+# Test endpoint for Callbell
+# -----------------------------
+
+@app.get("/webhook")
+async def test_webhook():
+    return {"status": "ok"}
+
+
+# -----------------------------
+# Main webhook endpoint
+# -----------------------------
+
 @app.post("/webhook")
 async def webhook(data: dict):
 
-    print(data)
+    print("Incoming data:", data)
 
-    user_message = data.get("text") or data.get("message") or ""
+    # תמיכה בכמה פורמטים אפשריים של Callbell
+    user_message = (
+        data.get("message", {}).get("text")
+        or data.get("text")
+        or data.get("message")
+        or ""
+    )
+
+    print("User message:", user_message)
 
     results = search(user_message)
 
     context = ""
+
     for r in results:
         context += f"""
 שאלה: {r['question']}
@@ -67,17 +95,7 @@ async def webhook(data: dict):
     prompt = f"""
 אתה נציג שירות של המרכז ללימודי המשך של אוניברסיטת תל אביב.
 
-אם המשתמש מבקש לדבר עם נציג אנושי,
-או אם אינך בטוח בתשובה,
-החזר JSON בצורה:
-
-{{"reply":"", "handoff": true}}
-
-אם אתה יכול לענות, החזר:
-
-{{"reply":"התשובה שלך", "handoff": false}}
-
-ענה אך ורק בפורמט JSON.
+ענה בצורה טבעית, קצרה וברורה.
 
 ידע מהמאגר:
 {context}
@@ -86,32 +104,23 @@ async def webhook(data: dict):
 {user_message}
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    reply_text = response.choices[0].message.content
-
     try:
-        ai_data = json.loads(reply_text)
 
-        if "reply" not in ai_data:
-            ai_data["reply"] = reply_text
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
 
-        if "handoff" not in ai_data:
-            ai_data["handoff"] = False
+        reply_text = response.choices[0].message.content
 
-    except:
-        ai_data = {
-            "reply": reply_text,
-            "handoff": False
-        }
+    except Exception as e:
 
-    return ai_data
-    ai_data = {
-        "reply": reply_text,
-        "handoff": False
-    }
+        print("OpenAI error:", e)
 
-    return ai_data
+        reply_text = "מצטער, הייתה תקלה זמנית. אפשר לנסות שוב בעוד רגע."
+
+    print("AI reply:", reply_text)
+
+    return {"reply": reply_text}
