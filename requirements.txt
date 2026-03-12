@@ -3,3 +3,6 @@ uvicorn
 openai
 scikit-learn
 numpy
+requests
+beautifulsoup4
+tqdm

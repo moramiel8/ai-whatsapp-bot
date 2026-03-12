@@ -10,25 +10,25 @@ app = FastAPI()
 client = OpenAI()
 
 # -----------------------------
-# load knowledge
+# load website knowledge (RAG)
 # -----------------------------
 
-with open("knowledge.json", "r", encoding="utf-8") as f:
-    knowledge = json.load(f)
+with open("knowledge_base.json","r",encoding="utf-8") as f:
+    docs = json.load(f)
 
-questions = [k["question"] for k in knowledge]
-
-# create embeddings for all questions
-embeddings = client.embeddings.create(
-    model="text-embedding-3-small",
-    input=questions
-).data
-
-vectors = [e.embedding for e in embeddings]
+vectors = [d["embedding"] for d in docs]
 
 
 # -----------------------------
-# semantic search
+# load FAQ from conversations
+# -----------------------------
+
+with open("conversations.json","r",encoding="utf-8") as f:
+    conversations = json.load(f)
+
+
+# -----------------------------
+# semantic search on website
 # -----------------------------
 
 def search(question):
@@ -40,22 +40,31 @@ def search(question):
 
     scores = cosine_similarity([q_embedding], vectors)[0]
 
-    top_indices = scores.argsort()[-3:][::-1]
+    top_indices = scores.argsort()[-5:][::-1]
 
-    results = [knowledge[i] for i in top_indices]
-
-    # אם אין התאמה טובה
-    if scores[top_indices[0]] < 0.6:
-        return [{
-            "question": "",
-            "answer": "אשמח לעזור 🙂 אפשר לפרט קצת יותר על השאלה?"
-        }]
+    results = [docs[i] for i in top_indices]
 
     return results
 
 
 # -----------------------------
-# Test endpoint for Callbell
+# search FAQ first
+# -----------------------------
+
+def search_faq(question):
+
+    question = question.lower()
+
+    for c in conversations:
+
+        if c["question"] in question:
+            return c["answer"]
+
+    return None
+
+
+# -----------------------------
+# Test endpoint
 # -----------------------------
 
 @app.get("/webhook")
@@ -64,7 +73,7 @@ async def test_webhook():
 
 
 # -----------------------------
-# Main webhook endpoint
+# Main webhook
 # -----------------------------
 
 @app.post("/webhook")
@@ -72,7 +81,6 @@ async def webhook(data: dict):
 
     print("Incoming data:", data)
 
-    # תמיכה בכמה פורמטים אפשריים של Callbell
     user_message = (
         data.get("message", {}).get("text")
         or data.get("text")
@@ -80,7 +88,29 @@ async def webhook(data: dict):
         or ""
     )
 
+    user_message = user_message.strip()
+
     print("User message:", user_message)
+
+    # -----------------------------
+    # handle empty messages
+    # -----------------------------
+
+    if not user_message:
+        return {"reply": "שלום 🙂 איך אפשר לעזור?"}
+
+    # -----------------------------
+    # check FAQ from conversations
+    # -----------------------------
+
+    faq_answer = search_faq(user_message)
+
+    if faq_answer:
+        return {"reply": faq_answer}
+
+    # -----------------------------
+    # search website knowledge
+    # -----------------------------
 
     results = search(user_message)
 
@@ -88,20 +118,31 @@ async def webhook(data: dict):
 
     for r in results:
         context += f"""
-שאלה: {r['question']}
-תשובה: {r['answer']}
+מקור: {r['url']}
+
+{r['text']}
+"""
+
+    context = context[:3000]
+
+    system_prompt = """
+אתה נציג שירות של המרכז ללימודי המשך של הפקולטה לרפואה באוניברסיטת תל אביב.
+
+ענה בעברית.
+ענה בצורה אדיבה, מקצועית וקצרה.
+אם יש קישור רלוונטי – ציין אותו.
+אם אין מידע ברור – הצע לפנות למרכז.
 """
 
     prompt = f"""
-אתה נציג שירות של המרכז ללימודי המשך של אוניברסיטת תל אביב.
+מידע מהאתר:
 
-ענה בצורה טבעית, קצרה וברורה.
-
-ידע מהמאגר:
 {context}
 
-שאלת משתמש:
+שאלת המשתמש:
 {user_message}
+
+ענה על בסיס המידע בלבד.
 """
 
     try:
@@ -109,6 +150,7 @@ async def webhook(data: dict):
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
             ]
         )
